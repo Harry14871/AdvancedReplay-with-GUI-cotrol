@@ -27,6 +27,39 @@ public class GUIHandler implements Listener {
     }
 
     @EventHandler
+private void handleManualClick(Player player, int page, int slot, ItemStack clicked) {
+        if (slot == 40) openMainMenu(player);
+        else if (slot == 38) openManualList(player, page - 1);
+        else if (slot == 42) openManualList(player, page + 1);
+        else if (slot > 0 && slot < 36) {
+            if (clicked == null || !clicked.hasItemMeta()) return;
+            String targetName = ChatColor.stripColor(clicked.getItemMeta().getDisplayName());
+            Player target = Bukkit.getPlayerExact(targetName);
+            if (target == null) {
+                player.sendMessage(ChatColor.RED + "玩家 " + targetName + " 不在線上！");
+                return;
+            }
+
+            if (main.getReplayStatus(target)) {
+                // Session 調整後：使用自訂的 stop 接口 + 傳入文件名
+                String filename = main.getRecordingFileName(target);
+                if (filename != null) {
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "replay stop " + targetName + " " + filename);
+                    player.sendMessage(ChatColor.YELLOW + "已停止對玩家 " + targetName + " 的錄影: " + filename);
+                    main.setReplayStatus(target, false, false, null);
+                } else {
+                    player.sendMessage(ChatColor.RED + "找不到對應的錄影檔案名稱，可能錄影尚未開始或檔案遺失。");
+                }
+            } else {
+                // 使用當前時間戳作為檔名避免重複
+                String fileName = targetName + "-" + new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date());
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "replay start " + targetName + " " + fileName);
+                main.setReplayStatus(target, true, false, fileName);
+                player.sendMessage(ChatColor.GREEN + "已開始對玩家 " + targetName + " 錄影: " + fileName);
+            }
+            openManualList(player, page);
+        }
+    }
     public void onInventoryClick(InventoryClickEvent e) {
         String title = e.getView().getTitle();
         if (title.equals(Messages.get("gui.title.main"))) {
@@ -104,5 +137,4 @@ public class GUIHandler implements Listener {
         admin.openInventory(inv);
     }
 
-    // ... openFileListGUI 等方法類似創建GUI列出某分類內的檔案，點擊檔案可觸發播放等功能 ...
 }
