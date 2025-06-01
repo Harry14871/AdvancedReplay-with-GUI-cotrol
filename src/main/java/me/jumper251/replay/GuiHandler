@@ -1,0 +1,108 @@
+package me.jumper251.replay.gui;
+
+public class GUIHandler implements Listener {
+    private final Plugin plugin;
+    public GUIHandler(Plugin plugin) {
+        this.plugin = plugin;
+    }
+
+    /** 開啟主控制面板GUI */
+    public static void openMainGUI(Player admin) {
+        Inventory inv = Bukkit.createInventory(null, 54, 
+                       Messages.get("gui.title.main"));  // 標題: 控制面板
+        // 1. 自動錄影開關按鈕 (lever表示開/關)
+        ItemStack autoToggle = createToggleItem(ReplayAPI.autoRecordEnabled);
+        inv.setItem(0, autoToggle);
+        // 2. 在線玩家頭顱列表
+        int slot = 1;
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            ItemStack headItem = createPlayerHeadItem(p, DataManager.isRecording(p));
+            // 附加顯示該玩家錄影狀態：名稱或lore包含「錄影中」「未錄影」等，多語系處理
+            inv.setItem(slot++, headItem);
+        }
+        // 3. 錄影檔案分類檢視按鈕 (例如一個書本或箱子圖示)
+        inv.setItem(9, createCategoryMenuItem());
+        // 打開介面給管理員
+        admin.openInventory(inv);
+    }
+
+    @EventHandler
+    public void onInventoryClick(InventoryClickEvent e) {
+        String title = e.getView().getTitle();
+        if (title.equals(Messages.get("gui.title.main"))) {
+            e.setCancelled(true);  // 禁止玩家取出物品
+            Player clicker = (Player) e.getWhoClicked();
+            ItemStack item = e.getCurrentItem();
+            if (item == null) return;
+            Material type = item.getType();
+            if (type == Material.LEVER) {
+                // 切換自動錄影狀態
+                boolean newState = !ReplayAPI.autoRecordEnabled;
+                ReplayAPI.autoRecordEnabled = newState;
+                plugin.getConfig().set("autoRecord", newState);
+                plugin.saveConfig();
+                if (newState) {
+                    // 開啟：對所有玩家開始錄影
+                    for (Player p: Bukkit.getOnlinePlayers()) {
+                        if (!DataManager.isRecording(p)) {
+                            ReplayAPI.startRecording(p);
+                        }
+                    }
+                } else {
+                    // 關閉：停止所有玩家的錄影
+                    for (Player p: Bukkit.getOnlinePlayers()) {
+                        if (DataManager.isRecording(p)) {
+                            ReplayAPI.stopRecording(p);
+                        }
+                    }
+                }
+                // 更新GUI按鈕顯示或提示訊息
+                clicker.sendMessage(Messages.get("gui.auto_record") + ": " 
+                        + (newState ? Messages.get("gui.status.on") 
+                                    : Messages.get("gui.status.off")));
+                if (ReplayAPI.debug) {
+                    plugin.getLogger().info("[Debug] Auto-record toggled " 
+                            + (newState ? "ON" : "OFF") + " via GUI.");
+                }
+            } else if (type == Material.PLAYER_HEAD) {
+                // 切換單一玩家的錄影狀態
+                Player target = getPlayerFromHead(item);
+                if (target != null) {
+                    if (DataManager.isRecording(target)) {
+                        ReplayAPI.stopRecording(target);
+                        clicker.sendMessage(String.format(
+                                Messages.get("gui.stopped_recording"), target.getName()));
+                    } else {
+                        ReplayAPI.startRecording(target);
+                        clicker.sendMessage(String.format(
+                                Messages.get("gui.started_recording"), target.getName()));
+                    }
+                    // 可選：更新頭顱物品的外觀以反映新狀態（如名稱顏色或發光）
+                }
+                if (ReplayAPI.debug) {
+                    plugin.getLogger().info("[Debug] " + clicker.getName() 
+                            + " toggled recording for " + (target != null ? target.getName() : "unknown"));
+                }
+            } else if (type == Material.CHEST) {
+                // 打開錄影檔案分類清單GUI
+                openCategoryGUI(clicker);
+            }
+        }
+        // 類似地，檢查其他GUI（分類清單界面或檔案清單界面）的 title 來處理點擊 ...
+    }
+
+    /** 開啟分類清單GUI */
+    public static void openCategoryGUI(Player admin) {
+        Map<String, List<File>> categories = DataManager.getRecordingsByCategory();
+        Inventory inv = Bukkit.createInventory(null, 54, Messages.get("gui.title.categories"));
+        int i = 0;
+        for (String category : categories.keySet()) {
+            // 使用玩家頭顱或其他圖示代表一個分類（玩家名或 "Unknown"）
+            ItemStack categoryItem = createCategoryItem(category, categories.get(category).size());
+            inv.setItem(i++, categoryItem);
+        }
+        admin.openInventory(inv);
+    }
+
+    // ... openFileListGUI 等方法類似創建GUI列出某分類內的檔案，點擊檔案可觸發播放等功能 ...
+}
